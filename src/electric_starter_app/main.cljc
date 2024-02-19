@@ -1,15 +1,70 @@
-(ns electric-starter-app.main
-  (:require [hyperfiddle.electric :as e]
-            [hyperfiddle.electric-dom2 :as dom]))
+ (ns electric-starter-app.main
+   (:require [hyperfiddle.electric :as e]
+             [hyperfiddle.electric-dom2 :as dom]
+             [hyperfiddle.electric-ui4 :as ui4]))
 
-;; Saving this file will automatically recompile and update in your browser
+(defn empty->nil [x]
+  (if (empty? x) nil x))
 
-(e/defn Main [ring-request]
+#?(:clj (defonce !msgs (atom (list))))
+(e/def msgs (e/server (reverse (e/watch !msgs))))
+
+#?(:clj (defonce !present (atom {}))) ; session-id -> user
+(e/def present (e/server (e/watch !present)))
+
+(e/defn Chat-UI [username]
   (e/client
-    (binding [dom/node js/document.body]
-      (dom/h1 (dom/text "Hello from Electric Clojure"))
-      (dom/p (dom/text "Source code for this page is in ")
-             (dom/code (dom/text "src/electric_start_app/main.cljc")))
-      (dom/p (dom/text "Make sure you check the ")
-        (dom/a (dom/props {:href "https://electric.hyperfiddle.net/" :target "_blank"})
-          (dom/text "Electric Tutorial"))))))
+    (dom/div (dom/text "Present: "))
+    (dom/ul
+      (e/server
+        (e/for-by first [[session-id username] present]
+          (e/client
+            (dom/li (dom/text username (str " (session-id: " session-id ")")))))))
+
+    (dom/hr)
+    (dom/ul
+      (e/server
+        (e/for [{:keys [::username ::msg]} msgs]
+          (e/client
+            (dom/li (dom/strong (dom/text username))
+              (dom/text " " msg))))))
+
+    (dom/input
+      (dom/props {:placeholder "Type a message" :maxlength 100})
+      (dom/on "keydown" (e/fn [e]
+                          (when (= "Enter" (.-key e))
+                            (when-some [v (empty->nil (.substr (.. e -target -value) 0 100))]
+                              (dom/style {:background-color "yellow"}) ; loading
+                              (e/server
+                                (swap! !msgs #(cons {::username @(::user e/http-request) ::msg v}
+                                                (take 9 %))))
+                              (set! (.-value dom/node) ""))))))))
+
+(e/defn ChatExtended []
+  (e/client
+    (let [session-id
+          (e/server (get-in e/http-request [:headers "sec-websocket-key"]))
+          ;username (e/server (get-in e/http-request [:cookies "username" :value]))]
+          username (e/server (e/watch (::user e/http-request)))]
+      (do ; if-not (some? username)
+        (dom/div
+          ;(dom/text "Set login cookie here: ")
+          ;(dom/a (dom/props {::dom/href "/auth"}) (dom/text "/auth"))
+          ;(dom/text " (blank password)"))
+          (ui4/button (e/fn []
+                       (e/server
+                         (reset! (::user e/http-request) (str "user-" (rand-int 1000)))
+                         (println "user is now " @(::user e/http-request))))
+            (dom/text "Login as random user")))
+        (do
+          (e/server
+            (swap! !present assoc session-id username)
+            (e/on-unmount #(swap! !present dissoc session-id)))
+          (dom/div (dom/text "Authenticated as: " username))
+          (Chat-UI. username))))))
+(e/defn Main [http-request]
+  (e/server
+    (binding [e/http-request (assoc http-request ::user (atom "anon"))]
+      (e/client
+        (binding [dom/node js/document.body]
+        (ChatExtended.))))))
