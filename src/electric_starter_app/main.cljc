@@ -12,6 +12,11 @@
 #?(:clj (defonce !present (atom {}))) ; session-id -> user
 (e/def present (e/server (e/watch !present)))
 
+; the above atoms are defonce and shared.
+; I want an atom that is per-uer not shared
+(e/def !user (e/server (atom "anon")))
+(e/def user (e/server (e/watch !user)))
+
 (e/defn Chat-UI [username]
   (e/client
     (dom/div (dom/text "Present: "))
@@ -36,7 +41,7 @@
                             (when-some [v (empty->nil (.substr (.. e -target -value) 0 100))]
                               (dom/style {:background-color "yellow"}) ; loading
                               (e/server
-                                (swap! !msgs #(cons {::username @(::user e/http-request) ::msg v}
+                                (swap! !msgs #(cons {::username @!user ::msg v}
                                                 (take 9 %))))
                               (set! (.-value dom/node) ""))))))))
 
@@ -45,7 +50,7 @@
     (let [session-id
           (e/server (get-in e/http-request [:headers "sec-websocket-key"]))
           ;username (e/server (get-in e/http-request [:cookies "username" :value]))]
-          username (e/server (e/watch (::user e/http-request)))]
+          username (e/server (e/watch !user))]
       (do ; if-not (some? username)
         (dom/div
           ;(dom/text "Set login cookie here: ")
@@ -53,8 +58,8 @@
           ;(dom/text " (blank password)"))
           (ui4/button (e/fn []
                        (e/server
-                         (reset! (::user e/http-request) (str "user-" (rand-int 1000)))
-                         (println "user is now " @(::user e/http-request))))
+                         (reset! !user (str "user-" (rand-int 1000)))
+                         (println "user is now " @!user)))
             (dom/text "Login as random user")))
         (do
           (e/server
