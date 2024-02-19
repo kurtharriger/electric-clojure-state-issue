@@ -14,7 +14,11 @@
 
 ; the above atoms are defonce and shared.
 ; I want an atom that is per-uer not shared
-(e/def !user (e/server (atom "anon")))
+(e/def !user)
+; I would expect this to throw an error that
+; !user is not defined, but perhaps its inlined
+; into the call site and thus isn't actually
+; executed at definition as one may expect
 (e/def user (e/server (e/watch !user)))
 
 (e/defn Chat-UI [username]
@@ -67,9 +71,11 @@
             (e/on-unmount #(swap! !present dissoc session-id)))
           (dom/div (dom/text "Authenticated as: " username))
           (Chat-UI. username))))))
+
 (e/defn Main [http-request]
   (e/server
-    (binding [e/http-request (assoc http-request ::user (atom "anon"))]
+    (binding [;e/http-request (assoc http-request ::user (atom "anon"))
+              !user (atom "anon")]
       (e/client
         (binding [dom/node js/document.body]
         (ChatExtended.))))))
